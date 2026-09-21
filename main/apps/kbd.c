@@ -310,7 +310,7 @@ void kbd_show(const char *title, const char *initial,
 
     /* 加载键盘屏但【不删除】调用方屏幕 (退出时恢复, 避免调用方操作已删除对象) */
     lv_obj_t *prev_scr = lv_scr_act();
-    lv_screen_load_anim(s_scr, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, false);
+    lv_screen_load_anim(s_scr, LV_SCREEN_LOAD_ANIM_FADE_ON, UI_TRANSITION_MS, 0, false);
 
     for (;;) {
         lv_timer_handler();
@@ -356,10 +356,13 @@ void kbd_show(const char *title, const char *initial,
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 
-    /* 退出: 恢复调用方屏幕, 删除键盘屏 (先移出分组) */
+    /* 退出: 先移出分组, 再淡入恢复调用方屏幕并自动删除键盘屏 */
     ui_group_cleanup(s_scr);
-    lv_obj_delete(s_scr);
-    if (prev_scr) lv_screen_load(prev_scr);
+    if (prev_scr) {
+        lv_screen_load_anim(prev_scr, LV_SCREEN_LOAD_ANIM_FADE_ON, UI_TRANSITION_MS, 0, true);
+    } else {
+        lv_obj_delete(s_scr);
+    }
 
     if (s_cb) s_cb(s_buf, s_ctx);
 }

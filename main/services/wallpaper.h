@@ -1,6 +1,6 @@
 /*
  * wallpaper.h — 壁纸模块 (屏保用)
- * 图片来源优先级: SD 卡 /sdcard/wallpaper 目录下的 jpg 图片 > 网络 rgb565 > 内置程序生成
+ * 图片来源优先级: SD 卡 /sdcard/wallpaper 目录下的 jpg/jpeg/png/bmp > 内置程序生成
  */
 #pragma once
 

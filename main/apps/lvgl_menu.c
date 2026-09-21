@@ -1,12 +1,13 @@
 /*
- * lvgl_menu.c — 小孟蜜汁系统主页
+ * lvgl_menu.c — 小孟蜜汁系统主页 (v2 星夜暗色)
  *
- * Apple Dark 风格布局：
- * - 顶部 44px 品牌/状态区（品牌、时间、电量互不重叠）
- * - 中部 4 项/页的卡片列表
+ * 布局:
+ * - 顶部 44px 品牌/状态区 (品牌、时间、电量互不重叠)
+ * - 中部 4 项/页的应用卡片列表 (彩色图标徽标 + 标题 + 箭头)
  * - 底部固定操作提示 + 页指示
  *
- * 性能策略：纯色、细边框、无阴影；翻页只做 180ms 位移动画，避免大面积复杂重绘。
+ * 性能策略: 纯色、细边框、无阴影; 翻页只做 180ms 缓动位移;
+ * 屏切换用 150ms 淡入过渡, 不做大面积复杂重绘。
  */
 #include <string.h>
 #include <time.h>
@@ -24,27 +25,26 @@
 #include "apps.h"
 #include "services/wifi_mgr.h"
 #include "services/led_ctrl.h"
+#include "services/screensaver.h"
 #include "version.h"
 #include "safe_string.h"
-
-LV_FONT_DECLARE(ui_font_lvgl_10);
-LV_FONT_DECLARE(book_font_lvgl);
 
 static const char *TAG = "menu";
 
 typedef struct {
     const char *name;
+    const char *glyph;   /* 图标徽标单字/字母 */
     uint32_t color;
     app_func_t run;
 } menu_entry_t;
 
 static const menu_entry_t s_items[] = {
-    { "电子书",      0x0A84FF, app_ebook_run },
-    { "图库",        0x30D158, app_gallery_run },
-    { "NES",         0xFF453A, app_nes_run },
-    { "游戏",        0x64D2FF, app_games_run },
-    { "音乐",        0xFF375F, app_music_run },
-    { "系统设置",    0xFF9F0A, app_settings_run },
+    { "电子书",   "书", 0x0A84FF, app_ebook_run },
+    { "图库",     "图", 0x30D158, app_gallery_run },
+    { "NES",      "N",  0xFF453A, app_nes_run },
+    { "游戏",     "游", 0x64D2FF, app_games_run },
+    { "音乐",     "音", 0xFF375F, app_music_run },
+    { "系统设置", "设", 0xFF9F0A, app_settings_run },
 };
 #define ITEM_COUNT (sizeof(s_items) / sizeof(s_items[0]))
 
@@ -53,19 +53,21 @@ static const menu_entry_t s_items[] = {
 #define TOP_H        44
 #define BOT_H        22
 #define CONT_H       (240 - TOP_H - BOT_H)
-#define ITEM_H       35
-#define ITEM_DY      41
+#define ITEM_H       36
+#define ITEM_DY      42
 #define ITEM_Y_PAD   6
 #define CONT_TOTAL   (PAGE_COUNT * CONT_H)
 #define CONT_MAX     ((PAGE_COUNT - 1) * CONT_H)
+#define SCREENSAVER_IDLE_S   30   /* 无按键多少秒后进入屏保 */
 
 static lv_obj_t *s_container = NULL;
 static lv_obj_t *s_dots[PAGE_COUNT];
 static lv_obj_t *s_time_label = NULL;
 static lv_obj_t *s_bat_label = NULL;
 static lv_obj_t *s_sysname_label = NULL;
-static lv_obj_t *s_vol_label = NULL;
-static uint32_t s_vol_until = 0;
+static lv_obj_t *s_toast = NULL;
+static lv_obj_t *s_toast_label = NULL;
+static uint32_t s_toast_until = 0;
 static volatile int s_launch = -1;
 static int s_cur_page = 0;
 static int s_focus_idx = 0;
@@ -74,6 +76,27 @@ static void item_click_cb(lv_event_t *e)
 {
     lv_obj_t *btn = lv_event_get_target(e);
     s_launch = (int)(intptr_t)lv_obj_get_user_data(btn);
+}
+
+static void show_toast(const char *text)
+{
+    if (s_toast_label) lv_label_set_text(s_toast_label, text);
+    if (s_toast) lv_obj_clear_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+    s_toast_until = (uint32_t)(esp_timer_get_time() / 1000000) + 2;
+}
+
+static void show_toast_inline(uint8_t vol)
+{
+    char buf[20];
+    snprintf(buf, sizeof(buf), "音量 %u%%", (unsigned)vol);
+    show_toast(buf);
+}
+
+static void show_toast_led(led_mode_t m)
+{
+    char buf[20];
+    snprintf(buf, sizeof(buf), "灯光: %s", led_ctrl_mode_name(m));
+    show_toast(buf);
 }
 
 static lv_obj_t *create_item(lv_obj_t *parent, int idx)
@@ -91,19 +114,14 @@ static lv_obj_t *create_item(lv_obj_t *parent, int idx)
     lv_obj_set_user_data(btn, (void *)(intptr_t)idx);
     lv_group_add_obj(lv_group_get_default(), btn);
 
-    /* 左侧应用色条，比圆点更清楚，仍保持非常低的渲染成本。 */
-    lv_obj_t *mark = lv_obj_create(btn);
-    lv_obj_set_size(mark, 4, 18);
-    lv_obj_set_style_bg_color(mark, lv_color_hex(it->color), 0);
-    lv_obj_set_style_border_width(mark, 0, 0);
-    lv_obj_set_style_radius(mark, 2, 0);
-    lv_obj_align(mark, LV_ALIGN_LEFT_MID, 12, 0);
-    lv_obj_clear_flag(mark, LV_OBJ_FLAG_SCROLLABLE);
+    /* 左侧应用图标徽标 */
+    lv_obj_t *icon = ui_app_icon(btn, it->color, it->glyph, 26);
+    lv_obj_align(icon, LV_ALIGN_LEFT_MID, 12, 0);
 
     lv_obj_t *name = lv_label_create(btn);
     lv_label_set_text(name, it->name);
     lv_obj_set_style_text_color(name, UI_THEME_TEXT, 0);
-    lv_obj_align(name, LV_ALIGN_LEFT_MID, 27, 0);
+    lv_obj_align(name, LV_ALIGN_LEFT_MID, 50, 0);
 
     lv_obj_t *arrow = lv_label_create(btn);
     lv_label_set_text(arrow, ">");
@@ -158,7 +176,7 @@ static void page_scroll(int page, bool animate)
         lv_anim_set_var(&a, s_container);
         lv_anim_set_exec_cb(&a, scroll_exec_cb);
         lv_anim_set_values(&a, lv_obj_get_scroll_y(s_container), target);
-        lv_anim_set_time(&a, 180);
+        lv_anim_set_time(&a, UI_SCROLL_MS);
         lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
         lv_anim_set_completed_cb(&a, scroll_complete_cb);
         lv_anim_start(&a);
@@ -201,21 +219,15 @@ static void menu_build(void)
     lv_obj_set_style_text_font(sub, &ui_font_lvgl_10, 0);
     lv_obj_set_pos(sub, 13, 27);
 
-    s_vol_label = lv_label_create(bar);
-    lv_obj_set_style_text_color(s_vol_label, UI_THEME_ACCENT, 0);
-    lv_obj_set_pos(s_vol_label, 12, 6);
-    lv_obj_add_flag(s_vol_label, LV_OBJ_FLAG_HIDDEN);
-    s_vol_until = 0;
-
     s_time_label = lv_label_create(bar);
     lv_label_set_text(s_time_label, "---- -- -- --:--");
     lv_obj_set_style_text_color(s_time_label, UI_THEME_TEXT, 0);
-    lv_obj_set_style_text_font(s_time_label, &ui_font_lvgl_10, 0);
+    lv_obj_set_style_text_font(s_time_label, &ui_font_lvgl, 0);
     /* 日期 + 时间放在同一行右对齐：YYYY-MM-DD HH:MM。
-     * 只扩大右侧标签宽度，不侵占左侧“小孟蜜汁系统”品牌区域。 */
-    lv_obj_set_width(s_time_label, 158);
+     * 只扩大右侧标签宽度，不侵占左侧品牌区域。 */
+    lv_obj_set_width(s_time_label, 160);
     lv_obj_set_style_text_align(s_time_label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_time_label, 150, 6);
+    lv_obj_set_pos(s_time_label, 148, 4);
 
     s_bat_label = lv_label_create(bar);
     lv_label_set_text(s_bat_label, "电量 --%");
@@ -223,7 +235,23 @@ static void menu_build(void)
     lv_obj_set_style_text_font(s_bat_label, &ui_font_lvgl_10, 0);
     lv_obj_set_width(s_bat_label, 92);
     lv_obj_set_style_text_align(s_bat_label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_bat_label, 216, 25);
+    lv_obj_set_pos(s_bat_label, 216, 26);
+
+    /* 状态胶囊 (音量/灯光等瞬时提示), 最后创建保证盖在品牌层之上 */
+    s_toast = lv_obj_create(bar);
+    lv_obj_set_size(s_toast, 128, 24);
+    lv_obj_set_pos(s_toast, 10, 10);
+    lv_obj_set_style_bg_color(s_toast, UI_THEME_ACCENT, 0);
+    lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_toast, 0, 0);
+    lv_obj_set_style_radius(s_toast, 12, 0);
+    lv_obj_set_style_pad_all(s_toast, 0, 0);
+    lv_obj_clear_flag(s_toast, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+    s_toast_label = lv_label_create(s_toast);
+    lv_obj_set_style_text_color(s_toast_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_toast_label, &ui_font_lvgl_10, 0);
+    lv_obj_center(s_toast_label);
 
     /* 中部内容区 */
     s_container = lv_obj_create(scr);
@@ -279,9 +307,9 @@ static void menu_build(void)
 
     lv_obj_t *old = lv_scr_act();
     if (old && old != scr) ui_group_cleanup(old);
-    /* 主菜单每次从应用返回都会重建；必须自动删除上一屏，
+    /* 主菜单每次从应用返回都会重建；淡入加载并自动删除上一屏，
      * 否则每进出一次应用都会遗留一棵 LVGL 对象树。 */
-    lv_screen_load_anim(scr, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+    lv_screen_load_anim(scr, LV_SCREEN_LOAD_ANIM_FADE_ON, UI_TRANSITION_MS, 0, true);
 
     int target = s_cur_page * CONT_H;
     if (target > CONT_MAX) target = CONT_MAX;
@@ -298,6 +326,7 @@ void lvgl_menu_run(void)
     uint32_t last_b = 0, last_h = 0;
     time_t last_minute = (time_t)-1;
     bool unsynced_shown = false;
+    uint32_t last_active = (uint32_t)(esp_timer_get_time() / 1000000);
 
     for (;;) {
         lv_timer_handler();
@@ -342,15 +371,15 @@ void lvgl_menu_run(void)
             if (s_bat_label) lv_label_set_text(s_bat_label, buf);
         }
 
-        if (s_vol_until && hnow >= s_vol_until) {
-            s_vol_until = 0;
-            if (s_vol_label) lv_obj_add_flag(s_vol_label, LV_OBJ_FLAG_HIDDEN);
-            if (s_sysname_label) lv_obj_clear_flag(s_sysname_label, LV_OBJ_FLAG_HIDDEN);
+        if (s_toast_until && hnow >= s_toast_until) {
+            s_toast_until = 0;
+            if (s_toast) lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
         }
 
         key_event_t evt;
         while (buttons_wait_event(&evt, 0)) {
             if (evt.evt != KEY_EVT_PRESS) continue;
+            last_active = hnow;
             switch (evt.key) {
             case KEY_UP:
             case KEY_DOWN: {
@@ -385,34 +414,19 @@ void lvgl_menu_run(void)
             case KEY_A: {
                 uint8_t v = audio_get_volume();
                 audio_set_volume(v >= 100 ? 100 : v + 5);
-                if (s_vol_label) {
-                    lv_label_set_text_fmt(s_vol_label, "音量 %d%%", audio_get_volume());
-                    lv_obj_clear_flag(s_vol_label, LV_OBJ_FLAG_HIDDEN);
-                    if (s_sysname_label) lv_obj_add_flag(s_sysname_label, LV_OBJ_FLAG_HIDDEN);
-                    s_vol_until = hnow + 2;
-                }
+                show_toast_inline(audio_get_volume());
                 break;
             }
             case KEY_B: {
                 uint8_t v = audio_get_volume();
                 audio_set_volume(v <= 5 ? 0 : v - 5);
-                if (s_vol_label) {
-                    lv_label_set_text_fmt(s_vol_label, "音量 %d%%", audio_get_volume());
-                    lv_obj_clear_flag(s_vol_label, LV_OBJ_FLAG_HIDDEN);
-                    if (s_sysname_label) lv_obj_add_flag(s_sysname_label, LV_OBJ_FLAG_HIDDEN);
-                    s_vol_until = hnow + 2;
-                }
+                show_toast_inline(audio_get_volume());
                 break;
             }
             case KEY_BOOT: {
                 led_mode_t m = (led_mode_t)((led_ctrl_get_mode() + 1) % LED_MODE_MAX);
                 led_ctrl_set(led_ctrl_get_color(), led_ctrl_get_bright(), m);
-                if (s_vol_label) {
-                    lv_label_set_text_fmt(s_vol_label, "灯光: %s", led_ctrl_mode_name(m));
-                    lv_obj_clear_flag(s_vol_label, LV_OBJ_FLAG_HIDDEN);
-                    if (s_sysname_label) lv_obj_add_flag(s_sysname_label, LV_OBJ_FLAG_HIDDEN);
-                    s_vol_until = hnow + 2;
-                }
+                show_toast_led(m);
                 break;
             }
             case KEY_CONFIRM: {
@@ -440,6 +454,14 @@ void lvgl_menu_run(void)
             s_items[idx].run();
             menu_build();
         }
+
+        /* 屏保: 无按键 30 秒后进入壁纸轮播, 任意键唤醒后重建主页 */
+        if (hnow - last_active >= SCREENSAVER_IDLE_S) {
+            screensaver_run();
+            last_active = (uint32_t)(esp_timer_get_time() / 1000000);
+            menu_build();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

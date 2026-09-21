@@ -15,6 +15,8 @@ LV_FONT_DECLARE(ui_font_lvgl_10);
 
 typedef struct {
     const char *name;
+    const char *glyph;       /* 图标徽标单字 */
+    uint32_t color;
     const char *(*value_str)(void);
     void (*change)(int dir);   /* dir: +1/-1 */
     lv_obj_t *value_label;
@@ -65,9 +67,9 @@ static void bright_change(int dir)
 }
 
 static led_row_t s_rows[3] = {
-    { "模式", mode_val, mode_change, NULL },
-    { "颜色", color_val, color_change, NULL },
-    { "亮度", bright_val, bright_change, NULL },
+    { "模式", "模", 0xFF9F0A, mode_val, mode_change, NULL },
+    { "颜色", "色", 0x64D2FF, color_val, color_change, NULL },
+    { "亮度", "亮", 0xFFD700, bright_val, bright_change, NULL },
 };
 #define ROW_COUNT (sizeof(s_rows) / sizeof(s_rows[0]))
 
@@ -90,10 +92,13 @@ esp_err_t app_led_run(void)
         lv_obj_set_user_data(btn, (void *)(intptr_t)i);
         lv_group_add_obj(lv_group_get_default(), btn);
 
+        lv_obj_t *icon = ui_app_icon(btn, s_rows[i].color, s_rows[i].glyph, 22);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 12, 0);
+
         lv_obj_t *name = lv_label_create(btn);
         lv_label_set_text(name, s_rows[i].name);
         lv_obj_set_style_text_color(name, UI_THEME_TEXT, 0);
-        lv_obj_align(name, LV_ALIGN_LEFT_MID, 14, 0);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, 44, 0);
 
         lv_obj_t *val = lv_label_create(btn);
         lv_obj_set_style_text_color(val, UI_THEME_ACCENT, 0);

@@ -1,10 +1,11 @@
 /*
  * wallpaper.c — 壁纸模块 (屏保用)
- * 优先级: SD 卡 /sdcard/wallpaper 目录的 jpg 图片 (LVGL FS_POSIX 路径, 自动解码) >
- *         网络 rgb565 下载 > 内置程序生成 (兜底)
+ * 来源优先级: SD 卡 /sdcard/wallpaper 目录的 jpg/jpeg/png/bmp (LVGL FS_POSIX 路径, 自动解码)
+ *            > 内置程序生成 (渐变/星空/波纹/几何/网格 兜底)
  */
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -12,34 +13,18 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
-#include "esp_http_client.h"
 #include "lvgl.h"
 #include "wallpaper.h"
 #include "safe_string.h"
 
 static const char *TAG = "wp";
 
-static uint8_t *s_buf = NULL;              /* PSRAM 缓冲 (网络/内置 RGB565) */
+static uint8_t *s_buf = NULL;              /* PSRAM 缓冲 (内置 RGB565) */
 static lv_image_dsc_t s_dsc = {0};
 
 /* SD 卡壁纸文件名列表 */
 static char s_sd_files[WP_SD_MAX][40];
 static int s_sd_count = 0;
-
-/* 网络壁纸 (备用来源, SD 无图时使用) */
-static const char *s_net_urls[] = {
-    "http://192.168.1.8:8000/wall1.rgb565",
-    "http://192.168.1.8:8000/wall2.rgb565",
-    "http://192.168.1.8:8000/wall3.rgb565",
-    "http://192.168.1.8:8000/wall4.rgb565",
-    "http://192.168.1.8:8000/wall5.rgb565",
-    "http://192.168.1.8:8000/wall6.rgb565",
-    "http://192.168.1.8:8000/wall7.rgb565",
-    "http://192.168.1.8:8000/wall8.rgb565",
-    "http://192.168.1.8:8000/wall9.rgb565",
-    "http://192.168.1.8:8000/wall10.rgb565",
-};
-#define NET_COUNT (sizeof(s_net_urls) / sizeof(s_net_urls[0]))
 
 /* ---------- 内置壁纸生成 (兜底) ---------- */
 
@@ -109,38 +94,6 @@ static void wp_grid(uint16_t *px)
 
 static void (*const s_gen[])(uint16_t *) = { NULL, NULL, wp_waves, wp_geometric, wp_grid };
 
-/* ---------- 网络下载 (备用) ---------- */
-
-static int http_get_to_buf(const char *url, uint8_t *dst, int maxlen)
-{
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .timeout_ms = 8000,
-        .buffer_size = 4096,
-    };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
-    if (!c) return -1;
-    if (esp_http_client_open(c, 0) != ESP_OK) {
-        esp_http_client_cleanup(c);
-        return -1;
-    }
-    int len = esp_http_client_fetch_headers(c);
-    int st = esp_http_client_get_status_code(c);
-    if (st != 200 || len > maxlen) {
-        esp_http_client_cleanup(c);
-        return -1;
-    }
-    int total = 0;
-    while (total < len) {
-        int rd = esp_http_client_read(c, (char *)dst + total, len - total);
-        if (rd <= 0) break;
-        total += rd;
-    }
-    esp_http_client_cleanup(c);
-    ESP_LOGI(TAG, "download %s -> %d bytes", url, total);
-    return total;
-}
-
 /* ---------- SD 卡扫描 ---------- */
 
 static int sd_scan(void)
@@ -183,9 +136,7 @@ int wallpaper_sd_count(void) { return s_sd_count; }
 int wallpaper_count(void)
 {
     if (s_sd_count > 0) return s_sd_count;              /* SD 图优先 */
-    int n = 0;
-    for (int i = 0; i < (int)NET_COUNT; i++) if (s_net_urls[i]) n++;
-    return n > 0 ? n : WP_BUILTIN_COUNT;                /* 否则网络, 最后内置 */
+    return WP_BUILTIN_COUNT;                            /* 否则内置兜底 */
 }
 
 int wallpaper_init(void)
@@ -204,7 +155,7 @@ int wallpaper_init(void)
         s_dsc.data_size = WP_SIZE;
         s_dsc.data = s_buf;
     }
-    ESP_LOGI(TAG, "wallpaper init: sd=%d net=%d builtin=%d", s_sd_count, (int)NET_COUNT, WP_BUILTIN_COUNT);
+    ESP_LOGI(TAG, "wallpaper init: sd=%d builtin=%d", s_sd_count, WP_BUILTIN_COUNT);
     return 0;
 }
 
@@ -213,16 +164,14 @@ int wallpaper_load(int idx, char *src_path, int path_len)
     /* 1) SD 卡壁纸: 返回 LVGL 文件路径 (P: -> /sdcard), 由 LVGL 解码显示 */
     if (s_sd_count > 0 && idx < s_sd_count) {
         snprintf(src_path, path_len, "P:/wallpaper/%s", s_sd_files[idx]);
+        /* TJPGD 对扩展名大小写敏感, 与图库一致: 统一转小写 */
+        char *dot = strrchr(src_path, '.');
+        if (dot) {
+            for (char *p = dot; *p; p++) *p = (char)tolower((unsigned char)*p);
+        }
         return 1;
     }
-    /* 2) 网络壁纸 */
-    int net_idx = idx - s_sd_count;
-    if (net_idx >= 0 && net_idx < (int)NET_COUNT && s_net_urls[net_idx]) {
-        if (http_get_to_buf(s_net_urls[net_idx], s_buf, WP_SIZE) == WP_SIZE) {
-            return 0;
-        }
-    }
-    /* 3) 内置兜底 */
+    /* 2) 内置兜底 */
     if (!s_buf) return -1;
     uint16_t *px = (uint16_t *)s_buf;
     int bi = idx % WP_BUILTIN_COUNT;

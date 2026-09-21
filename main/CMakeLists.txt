@@ -21,6 +21,8 @@ idf_component_register(
         "services/wifi_mgr.c"
         "services/music_player.c"
         "services/file_proto.c"
+        "services/screensaver.c"
+        "services/wallpaper.c"
         "apps/lvgl_menu.c"
         "apps/lvgl_ui.c"
         "apps/kbd.c"

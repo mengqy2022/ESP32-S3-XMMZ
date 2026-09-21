@@ -1,5 +1,5 @@
 /*
- * lvgl_ui.c — LVGL 应用公共辅助实现
+ * lvgl_ui.c — LVGL 应用公共辅助实现 (v2 主题)
  */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,9 +7,6 @@
 #include "buttons.h"
 #include "lvgl_ui.h"
 #include "version.h"
-
-LV_FONT_DECLARE(ui_font_lvgl_10);
-LV_FONT_DECLARE(book_font_lvgl);
 
 static void ui_disable_outline(lv_obj_t *obj)
 {
@@ -36,10 +33,11 @@ void ui_style_list_button(lv_obj_t *btn)
 {
     if (!btn) return;
     ui_style_card(btn);
+    /* 聚焦: 强调色描边 + 卡片轻微提亮, 作为干净利落的焦点环 */
     lv_obj_set_style_bg_color(btn, UI_THEME_CARD_FOC, LV_STATE_FOCUSED);
     lv_obj_set_style_border_color(btn, UI_THEME_ACCENT, LV_STATE_FOCUSED);
     lv_obj_set_style_border_opa(btn, LV_OPA_COVER, LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(btn, 1, LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(btn, 2, LV_STATE_FOCUSED);
     ui_disable_outline(btn);
 }
 
@@ -48,6 +46,26 @@ void ui_style_compact_button(lv_obj_t *btn)
     if (!btn) return;
     ui_style_list_button(btn);
     lv_obj_set_style_radius(btn, 6, 0);
+}
+
+lv_obj_t *ui_app_icon(lv_obj_t *parent, uint32_t color, const char *glyph, lv_coord_t size)
+{
+    lv_obj_t *tile = lv_obj_create(parent);
+    lv_obj_set_size(tile, size, size);
+    /* 颜色向黑压暗 30%, 让图标更有层次, 同时保证白字在浅色系上依然清晰 */
+    lv_obj_set_style_bg_color(tile, lv_color_mix(lv_color_hex(color), lv_color_black(), 30), 0);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(tile, size * 3 / 10, 0);
+    lv_obj_set_style_border_width(tile, 0, 0);
+    lv_obj_set_style_pad_all(tile, 0, 0);
+    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *g = lv_label_create(tile);
+    lv_label_set_text(g, glyph);
+    lv_obj_set_style_text_color(g, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(g, &ui_font_lvgl, 0);
+    lv_obj_center(g);
+    return tile;
 }
 
 lv_obj_t *ui_screen_new_ex(const char *title, bool show_hint)
@@ -111,10 +129,10 @@ void ui_group_cleanup(lv_obj_t *obj)
 
 void ui_screen_show(lv_obj_t *scr)
 {
-    /* 先把当前屏所有对象移出分组, 再自动删除旧屏, 避免悬空指针 */
+    /* 先把当前屏所有对象移出分组, 再带淡入加载新屏并自动删除旧屏, 避免悬空指针 */
     lv_obj_t *old = lv_scr_act();
     if (old && old != scr) ui_group_cleanup(old);
-    lv_screen_load_anim(scr, LV_SCREEN_LOAD_ANIM_NONE, 0, 0, true);
+    lv_screen_load_anim(scr, LV_SCREEN_LOAD_ANIM_FADE_ON, UI_TRANSITION_MS, 0, true);
 }
 
 void ui_nav_key(int key)

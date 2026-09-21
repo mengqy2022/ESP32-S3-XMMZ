@@ -62,10 +62,12 @@ esp_err_t app_ble_run(void)
     ui_style_list_button(b1);
     lv_obj_set_user_data(b1, (void *)0);
     lv_group_add_obj(lv_group_get_default(), b1);
+    lv_obj_t *ic1 = ui_app_icon(b1, 0x4FB3FF, "播", 22);
+    lv_obj_align(ic1, LV_ALIGN_LEFT_MID, 12, 0);
     lv_obj_t *n1 = lv_label_create(b1);
     lv_label_set_text(n1, "广播");
     lv_obj_set_style_text_color(n1, UI_THEME_TEXT, 0);
-    lv_obj_align(n1, LV_ALIGN_LEFT_MID, 14, 0);
+    lv_obj_align(n1, LV_ALIGN_LEFT_MID, 44, 0);
     s_adv_val = lv_label_create(b1);
     lv_obj_set_style_text_color(s_adv_val, UI_THEME_ACCENT, 0);
     lv_obj_align(s_adv_val, LV_ALIGN_RIGHT_MID, -14, 0);
@@ -77,10 +79,12 @@ esp_err_t app_ble_run(void)
     ui_style_list_button(b2);
     lv_obj_set_user_data(b2, (void *)1);
     lv_group_add_obj(lv_group_get_default(), b2);
+    lv_obj_t *ic2 = ui_app_icon(b2, 0x9B7BFF, "扫", 22);
+    lv_obj_align(ic2, LV_ALIGN_LEFT_MID, 12, 0);
     lv_obj_t *n2 = lv_label_create(b2);
     lv_label_set_text(n2, "扫描");
     lv_obj_set_style_text_color(n2, UI_THEME_TEXT, 0);
-    lv_obj_align(n2, LV_ALIGN_LEFT_MID, 14, 0);
+    lv_obj_align(n2, LV_ALIGN_LEFT_MID, 44, 0);
     s_scan_val = lv_label_create(b2);
     lv_obj_set_style_text_color(s_scan_val, UI_THEME_ACCENT, 0);
     lv_obj_align(s_scan_val, LV_ALIGN_RIGHT_MID, -14, 0);

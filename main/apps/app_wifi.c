@@ -143,10 +143,12 @@ esp_err_t app_wifi_run(void)
     ui_style_list_button(bscan);
     lv_obj_set_user_data(bscan, (void *)(intptr_t)1);
     lv_group_add_obj(lv_group_get_default(), bscan);
+    lv_obj_t *ic1 = ui_app_icon(bscan, 0x3DA5FF, "扫", 18);
+    lv_obj_align(ic1, LV_ALIGN_LEFT_MID, 12, 0);
     lv_obj_t *lb1 = lv_label_create(bscan);
     lv_label_set_text(lb1, "扫描");
     lv_obj_set_style_text_color(lb1, UI_THEME_TEXT, 0);
-    lv_obj_center(lb1);
+    lv_obj_align(lb1, LV_ALIGN_LEFT_MID, 40, 0);
 
     /* 断开按钮 */
     lv_obj_t *bdis = lv_button_create(scr);
@@ -155,10 +157,12 @@ esp_err_t app_wifi_run(void)
     ui_style_list_button(bdis);
     lv_obj_set_user_data(bdis, (void *)(intptr_t)2);
     lv_group_add_obj(lv_group_get_default(), bdis);
+    lv_obj_t *ic2 = ui_app_icon(bdis, 0xFF4D42, "断", 18);
+    lv_obj_align(ic2, LV_ALIGN_LEFT_MID, 12, 0);
     lv_obj_t *lb2 = lv_label_create(bdis);
     lv_label_set_text(lb2, "断开");
     lv_obj_set_style_text_color(lb2, UI_THEME_TEXT, 0);
-    lv_obj_center(lb2);
+    lv_obj_align(lb2, LV_ALIGN_LEFT_MID, 40, 0);
 
     lv_obj_t *hint = lv_label_create(scr);
     lv_label_set_text(hint, "KEY5 扫描/断开  选择AP后KEY4连接");

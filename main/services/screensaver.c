@@ -30,7 +30,8 @@ void screensaver_run(void)
 
     lv_obj_t *old = lv_scr_act();
     if (old && old != scr) ui_group_cleanup(old);
-    lv_screen_load(scr);
+    /* 淡入进入屏保并自动删除旧屏, 避免每轮屏保泄漏一棵对象树 */
+    lv_screen_load_anim(scr, LV_SCREEN_LOAD_ANIM_FADE_ON, UI_TRANSITION_MS, 0, true);
 
     int count = wallpaper_count();
     int cur = 0;

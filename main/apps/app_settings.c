@@ -20,16 +20,17 @@ LV_FONT_DECLARE(ui_font_lvgl_10);
 
 typedef struct {
     const char *name;
+    const char *glyph;   /* 图标徽标单字/字母 */
     uint32_t color;
     app_func_t run;
 } sys_item_t;
 
 static const sys_item_t s_items[] = {
-    { "灯光",     0xFFD700, app_led_run },
-    { "蓝牙",     0x4FB3FF, app_ble_run },
-    { "WiFi",     0x9B7BFF, app_wifi_run },
-    { "系统信息", 0xFFB547, app_sysinfo_run },
-    { "按键测试", 0x6C7A89, app_keytest_run },
+    { "灯光",     "灯", 0xFFD700, app_led_run },
+    { "蓝牙",     "蓝", 0x4FB3FF, app_ble_run },
+    { "WiFi",     "W",  0x9B7BFF, app_wifi_run },
+    { "系统信息", "信", 0xFFB547, app_sysinfo_run },
+    { "按键测试", "测", 0x6C7A89, app_keytest_run },
 };
 #define SYS_COUNT (sizeof(s_items) / sizeof(s_items[0]))
 
@@ -46,17 +47,13 @@ static void sys_build(void)
         lv_obj_set_user_data(btn, (void *)(intptr_t)i);
         lv_group_add_obj(lv_group_get_default(), btn);
 
-        lv_obj_t *dot = lv_obj_create(btn);
-        lv_obj_set_size(dot, 8, 8);
-        lv_obj_set_style_bg_color(dot, lv_color_hex(s_items[i].color), 0);
-        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(dot, 0, 0);
-        lv_obj_align(dot, LV_ALIGN_LEFT_MID, 14, 0);
+        lv_obj_t *icon = ui_app_icon(btn, s_items[i].color, s_items[i].glyph, 22);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 12, 0);
 
         lv_obj_t *nm = lv_label_create(btn);
         lv_label_set_text(nm, s_items[i].name);
         lv_obj_set_style_text_color(nm, UI_THEME_TEXT, 0);
-        lv_obj_align(nm, LV_ALIGN_LEFT_MID, 34, 0);
+        lv_obj_align(nm, LV_ALIGN_LEFT_MID, 44, 0);
 
         lv_obj_t *arrow = lv_label_create(btn);
         lv_label_set_text(arrow, ">");
